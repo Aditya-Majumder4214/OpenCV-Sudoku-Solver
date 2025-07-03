@@ -1,127 +1,181 @@
+import copy
+
 class SudokuSolver:
     def __init__(self, grid):
-        self.grid = grid
-        self.prob_val = [[[0 for _ in range(10)] for _ in range(9)] for _ in range(9)]
-
-        # Initialize prob_val
-        for i in range(9):
-            for j in range(9):
-                self.prob_val[i][j][0] = [grid[i][j], 0, 0, 0]
-        for i in range(9):
-            for j in range(9):
-                if self.prob_val[i][j][0][0] == 0:
-                    for k in range(1, 10):
-                        self.prob_val[i][j][k] = 1
+        """
+        Initialize the Sudoku solver with a 9x9 grid.
+        :param grid: 2D list representing the initial Sudoku puzzle
+        """
+        self.grid = copy.deepcopy(grid)
+        # 3D list to track candidate values for each cell (1 if possible, 0 otherwise)
+        self.candidates = [[[1 for _ in range(9)] for _ in range(9)] for _ in range(9)]
 
     def solve(self):
-        zero_count = sum(
-            1 for i in range(9) for j in range(9) if self.prob_val[i][j][0][0] == 0
-        )
+        """
+        Attempts to solve the Sudoku puzzle using constraint propagation.
+        Falls back to recursive backtracking if logical methods stall.
+        """
+        self.initialize_candidates()
+        stuck = False
+        progress = True
 
-        while zero_count > 0:
-            zero_count = self.method1(zero_count)
-            self.method2(zero_count)
-            self.method3(zero_count)
-            zero_count = self.method4(zero_count)
-            zero_count = self.method5(zero_count)
-            zero_count = self.method6(zero_count)
+        while progress:
+            progress = self.fill_single_candidates()
+            self.update_candidates()
 
-    def method1(self, zero_count):
+            if self.is_solved():
+                print("Solved using logic!")
+                return
+
+            if not progress:
+                stuck = True
+
+        if stuck:
+            print("Logic solver stuck. Switching to backtracking...")
+            if not self.backtrack_solver():
+                print("No solution found.")
+            else:
+                print("Solved using backtracking!")
+
+    def initialize_candidates(self):
+        """
+        Initializes the candidate list based on the current grid state.
+        Each candidate list marks which digits (1–9) are still valid per cell.
+        """
         for i in range(9):
             for j in range(9):
-                if self.prob_val[i][j][0][0] == 0:
-                    op_count = 0
-                    for k in range(1, 10):
-                        if self.prob_val[i][j][k] == 1:
-                            op_count += 1
-                            temp_var = k
-                    if op_count == 1:
-                        self.prob_val[i][j][k] = 0
-                        self.prob_val[i][j][0][0] = k
-                        self.grid[i][j] = k
-                        zero_count -= 1
-        return zero_count
+                val = self.grid[i][j]
+                if val != 0:
+                    # Only keep the known value; others are ruled out
+                    self.candidates[i][j] = [0] * 9
+                    self.candidates[i][j][val - 1] = 1
 
-    def method2(self, zero_count):
+    def update_candidates(self):
+        """
+        Updates the candidate lists by eliminating values that are already
+        placed in the same row, column, or 3×3 subgrid.
+        """
         for i in range(9):
             for j in range(9):
-                if self.prob_val[i][j][0][0] != 0 and self.prob_val[i][j][0][2] == 0:
-                    for x in range(9):
-                        self.prob_val[i][x][self.prob_val[i][j][0][0]] = 0
-                        self.prob_val[x][j][self.prob_val[i][j][0][0]] = 0
-                    self.prob_val[i][j][0][2] = 1
+                val = self.grid[i][j]
+                if val != 0:
+                    for k in range(9):
+                        if k != j:
+                            self.candidates[i][k][val - 1] = 0
+                        if k != i:
+                            self.candidates[k][j][val - 1] = 0
 
-    def method3(self, zero_count):
+                    box_x, box_y = 3 * (i // 3), 3 * (j // 3)
+                    for x in range(box_x, box_x + 3):
+                        for y in range(box_y, box_y + 3):
+                            if x != i or y != j:
+                                self.candidates[x][y][val - 1] = 0
+
+    def fill_single_candidates(self):
+        """
+        Identifies cells where only a single candidate is valid, and fills them in.
+        :return: True if any progress was made; otherwise, False.
+        """
+        progress = False
         for i in range(9):
             for j in range(9):
-                if self.prob_val[i][j][0][0] != 0 and self.prob_val[i][j][0][3] == 0:
-                    for x in range(3):
-                        for y in range(3):
-                            self.prob_val[(i//3)*3 + x][(j//3)*3 + y][self.prob_val[i][j][0][0]] = 0
-                    self.prob_val[i][j][0][3] = 1
+                if self.grid[i][j] == 0:
+                    possible = [k + 1 for k, val in enumerate(self.candidates[i][j]) if val == 1]
+                    if len(possible) == 1:
+                        self.grid[i][j] = possible[0]
+                        self.candidates[i][j] = [0] * 9
+                        self.candidates[i][j][possible[0] - 1] = 1
+                        progress = True
+        return progress
 
-    def method4(self, zero_count):
+    def is_solved(self):
+        """
+        Checks whether the puzzle is completely filled and valid.
+        """
+        return all(self.grid[i][j] != 0 for i in range(9) for j in range(9)) and self.is_valid_grid()
+
+    def is_valid_grid(self):
+        """
+        Validates the current grid by ensuring all rows, columns, and 3×3 boxes
+        contain unique digits from 1 to 9.
+        """
+        def is_valid_unit(unit):
+            unit = [num for num in unit if num != 0]
+            return len(unit) == len(set(unit))
+
         for i in range(9):
-            opt = self.list_subtractor_row([1,2,3,4,5,6,7,8,9], self.grid[i])
-            for z in opt:
-                cell_count = 0
-                for j in range(9):
-                    if self.prob_val[i][j][0][0] == 0 and self.prob_val[i][j][z] == 1:
-                        cell_count += 1
-                        temp_var = j
-                if cell_count == 1:
-                    self.prob_val[i][temp_var][0][0] = z
-                    self.grid[i][temp_var] = z
-                    zero_count -= 1
-        return zero_count
+            if not is_valid_unit(self.grid[i]):
+                return False
+            if not is_valid_unit([self.grid[j][i] for j in range(9)]):
+                return False
 
-    def method5(self, zero_count):
-        for j in range(9):
-            opt = self.list_subtractor_column([1,2,3,4,5,6,7,8,9], j)
-            for z in opt:
-                cell_count = 0
-                for i in range(9):
-                    if self.prob_val[i][j][0][0] == 0 and self.prob_val[i][j][z] == 1:
-                        cell_count += 1
-                        temp_var = i
-                if cell_count == 1:
-                    self.prob_val[temp_var][j][0][0] = z
-                    self.grid[temp_var][j] = z
-                    zero_count -= 1
-        return zero_count
-
-    def method6(self, zero_count):
         for i in range(3):
             for j in range(3):
-                opt = self.list_subtractor_3x3([1,2,3,4,5,6,7,8,9], i*3, j*3)
-                for z in opt:
-                    cell_count = 0
-                    for x in range(3):
-                        for y in range(3):
-                            if self.prob_val[i*3 + x][j*3 + y][0][0] == 0 and self.prob_val[i*3 + x][j*3 + y][z] == 1:
-                                cell_count += 1
-                                temp_var1, temp_var2 = i*3 + x, j*3 + y
-                    if cell_count == 1:
-                        self.prob_val[temp_var1][temp_var2][0][0] = z
-                        self.grid[temp_var1][temp_var2] = z
-                        zero_count -= 1
-        return zero_count
+                block = []
+                for x in range(3):
+                    for y in range(3):
+                        block.append(self.grid[i * 3 + x][j * 3 + y])
+                if not is_valid_unit(block):
+                    return False
 
-    def list_subtractor_row(self, list1, list2):
-        return [x for x in list1 if x not in list2]
+        return True
 
-    def list_subtractor_column(self, list1, j):
-        col = [self.grid[i][j] for i in range(9)]
-        return [x for x in list1 if x not in col]
+    def find_empty(self):
+        """
+        Locates the next empty cell (denoted by 0).
+        :return: (row, col) tuple or None if grid is full.
+        """
+        for i in range(9):
+            for j in range(9):
+                if self.grid[i][j] == 0:
+                    return (i, j)
+        return None
 
-    def list_subtractor_3x3(self, list1, i, j):
-        block = [self.grid[i+x][j+y] for x in range(3) for y in range(3)]
-        return [x for x in list1 if x not in block]
+    def is_valid(self, num, pos):
+        """
+        Checks whether a given number is valid at a specified grid position.
+        :param num: Digit to place (1–9)
+        :param pos: Tuple (row, col)
+        """
+        row, col = pos
+        for i in range(9):
+            if self.grid[row][i] == num and i != col:
+                return False
+            if self.grid[i][col] == num and i != row:
+                return False
+
+        box_x = col // 3
+        box_y = row // 3
+        for i in range(box_y * 3, box_y * 3 + 3):
+            for j in range(box_x * 3, box_x * 3 + 3):
+                if self.grid[i][j] == num and (i, j) != pos:
+                    return False
+        return True
+
+    def backtrack_solver(self):
+        """
+        Recursive backtracking algorithm used when logic-based deduction is insufficient.
+        """
+        empty = self.find_empty()
+        if not empty:
+            return self.is_valid_grid()  # Final safety check
+        row, col = empty
+
+        for num in range(1, 10):
+            if self.is_valid(num, (row, col)):
+                self.grid[row][col] = num
+                if self.backtrack_solver():
+                    return True
+                self.grid[row][col] = 0  # Backtrack
+
+        return False
 
     def print_grid(self):
+        """
+        Outputs the current state of the Sudoku grid.
+        """
         for row in self.grid:
             print(row)
-
 
 
 if __name__ == "__main__":
@@ -143,4 +197,3 @@ if __name__ == "__main__":
     solver.solve()
     print("\nSolved Sudoku:")
     solver.print_grid()
-
